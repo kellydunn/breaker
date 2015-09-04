@@ -15,7 +15,7 @@ This implementation is relatively barebones; it's intended to be tripped and res
 ## example
 
 ```golang
-pacakge main
+package main
 
 import (
        "github.com/kellydunn/breaker"
