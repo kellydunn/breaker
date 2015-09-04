@@ -3,6 +3,7 @@
 ![](https://img1.etsystatic.com/051/0/9689471/il_570xN.666236333_1w1d.jpg)
 
 > Dr. Frederick Frankenstein: Throw... the third switch!
+>
 > Igor: [shocked] Not the *third switch*! 
 
 The `breaker` package provides a very simple implementation of the [Circuit Breaker](http://martinfowler.com/bliki/CircuitBreaker.html) design pattern.  Circuit Breakers are a classic pattern used in backend systems, and I just made this out of necessity at work one day.  There's a few other implementations out there, but I figured I'd put mine up on github.
