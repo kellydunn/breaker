@@ -92,4 +92,13 @@ func TestDo(t *testing.T) {
 	if !b2.IsOpen() {
 		t.Errorf("Expected a function that times out to trip the breaker")
 	}
+
+	b3 := NewBreaker(1)
+	err := b3.Do(func() error {
+		return nil
+	}, time.Second)
+
+	if err != nil {
+		t.Errorf("Did not expect an error for a successful call to Do.")
+	}
 }
