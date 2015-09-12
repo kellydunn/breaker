@@ -2,6 +2,7 @@ package breaker
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -100,5 +101,39 @@ func TestDo(t *testing.T) {
 
 	if err != nil {
 		t.Errorf("Did not expect an error for a successful call to Do.")
+	}
+}
+
+func TestTripAsync(t *testing.T) {
+	b := NewBreaker(10)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		i := 0
+		for i < 5 {
+			time.Sleep(time.Microsecond)
+			b.Trip()
+			i++
+		}
+		wg.Done()
+	}()
+
+	go func() {
+		i := 0
+		for i < 5 {
+			time.Sleep(time.Microsecond)
+			b.Trip()
+			i++
+		}
+
+		wg.Done()
+	}()
+
+	wg.Wait()
+
+	if b.IsClosed() {
+		t.Errorf("Breaker should not be closed.")
 	}
 }

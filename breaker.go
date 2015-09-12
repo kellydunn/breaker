@@ -3,6 +3,7 @@ package breaker
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,14 +20,14 @@ var ErrTimeout = errors.New("Timeout execeed in circuit breaker.")
 // but keeps track of failure counts and changes state accordingly.
 // More here: http://martinfowler.com/bliki/CircuitBreaker.html
 type Breaker struct {
-	threshold int
-	failures  int
+	threshold uint64
+	failures  uint64
 	mu        sync.RWMutex
 }
 
 // NewBreaker creates and returns a pointer to a new Breaker
 // with a failure threshold of the passed in value.
-func NewBreaker(threshold int) *Breaker {
+func NewBreaker(threshold uint64) *Breaker {
 	return &Breaker{
 		threshold: threshold,
 		failures:  0,
@@ -37,44 +38,32 @@ func NewBreaker(threshold int) *Breaker {
 // has a failure count above its failure threshold.
 // Returns false otherwise.
 func (b *Breaker) IsOpen() bool {
-	var open bool
-
-	b.mu.RLock()
-	if b.failures >= b.threshold {
-		open = true
-	}
-	b.mu.RUnlock()
-
-	return open
+	return b.loadFailures() >= b.loadThreshold()
 }
 
 // IsClosed returns true if the current Breaker
 // has a failure count below its failure threshold.
 // Returns false otherwise.
 func (b *Breaker) IsClosed() bool {
-	var closed bool
+	return b.loadFailures() < b.loadThreshold()
+}
 
-	b.mu.RLock()
-	if b.failures < b.threshold {
-		closed = true
-	}
-	b.mu.RUnlock()
+func (b *Breaker) loadFailures() uint64 {
+	return atomic.LoadUint64(&b.failures)
+}
 
-	return closed
+func (b *Breaker) loadThreshold() uint64 {
+	return atomic.LoadUint64(&b.threshold)
 }
 
 // Trip increments the failure count of the current Breaker.
 func (b *Breaker) Trip() {
-	b.mu.Lock()
-	b.failures++
-	b.mu.Unlock()
+	atomic.AddUint64(&b.failures, 1)
 }
 
 // Reset resets the current Breaker's failure count to zero.
 func (b *Breaker) Reset() {
-	b.mu.Lock()
-	b.failures = 0
-	b.mu.Unlock()
+	atomic.StoreUint64(&b.failures, 0)
 }
 
 // Do calls the HandlerFunc associated with the current Breaker
@@ -94,24 +83,25 @@ func (b *Breaker) Do(f HandlerFunc, timeout time.Duration) error {
 	// ensure the function runs within a timeout
 	go func() {
 		time.Sleep(timeout)
-		timerChan <- true
 
-		b.mu.Lock()
-		once.Do(func() { done.Done() })
-		b.mu.Unlock()		
+		once.Do(func() {
+			timerChan <- true
+			done.Done()
+		})
 	}()
 
 	// Setup a goroutine that runs the desired function
 	// and sends any error on the error channel
 	go func() {
 		err := f()
-		if err != nil {
-			errChan <- err
-		}
 
-		b.mu.Lock()
-		once.Do(func() { done.Done() })		
-		b.mu.Unlock()
+		once.Do(func() {
+			if err != nil {
+				errChan <- err
+			}
+
+			done.Done()
+		})
 	}()
 
 	// Wait for either the timeout
@@ -131,7 +121,6 @@ func (b *Breaker) Do(f HandlerFunc, timeout time.Duration) error {
 
 	default:
 		ret = nil
-		
 	}
 
 	return ret
