@@ -3,6 +3,7 @@ package breaker
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,14 +20,14 @@ var ErrTimeout = errors.New("Timeout execeed in circuit breaker.")
 // but keeps track of failure counts and changes state accordingly.
 // More here: http://martinfowler.com/bliki/CircuitBreaker.html
 type Breaker struct {
-	threshold int
-	failures  int
+	threshold uint64
+	failures  uint64
 	mu        sync.RWMutex
 }
 
 // NewBreaker creates and returns a pointer to a new Breaker
 // with a failure threshold of the passed in value.
-func NewBreaker(threshold int) *Breaker {
+func NewBreaker(threshold uint64) *Breaker {
 	return &Breaker{
 		threshold: threshold,
 		failures:  0,
@@ -37,44 +38,32 @@ func NewBreaker(threshold int) *Breaker {
 // has a failure count above its failure threshold.
 // Returns false otherwise.
 func (b *Breaker) IsOpen() bool {
-	var open bool
-
-	b.mu.RLock()
-	if b.failures >= b.threshold {
-		open = true
-	}
-	b.mu.RUnlock()
-
-	return open
+	return b.Failures() >= b.Threshold()
 }
 
 // IsClosed returns true if the current Breaker
 // has a failure count below its failure threshold.
 // Returns false otherwise.
 func (b *Breaker) IsClosed() bool {
-	var closed bool
+	return b.Failures() < b.Threshold()
+}
 
-	b.mu.RLock()
-	if b.failures < b.threshold {
-		closed = true
-	}
-	b.mu.RUnlock()
+func (b *Breaker) Failures() uint64 {
+	return atomic.LoadUint64(&b.failures)
+}
 
-	return closed
+func (b *Breaker) Threshold() uint64 {
+	return atomic.LoadUint64(&b.threshold)
 }
 
 // Trip increments the failure count of the current Breaker.
 func (b *Breaker) Trip() {
-	b.mu.Lock()
-	b.failures++
-	b.mu.Unlock()
+	atomic.AddUint64(&b.failures, 1)
 }
 
 // Reset resets the current Breaker's failure count to zero.
 func (b *Breaker) Reset() {
-	b.mu.Lock()
-	b.failures = 0
-	b.mu.Unlock()
+	atomic.StoreUint64(&b.failures, 0)
 }
 
 // Do calls the HandlerFunc associated with the current Breaker
@@ -98,7 +87,7 @@ func (b *Breaker) Do(f HandlerFunc, timeout time.Duration) error {
 
 		b.mu.Lock()
 		once.Do(func() { done.Done() })
-		b.mu.Unlock()		
+		b.mu.Unlock()
 	}()
 
 	// Setup a goroutine that runs the desired function
@@ -110,7 +99,7 @@ func (b *Breaker) Do(f HandlerFunc, timeout time.Duration) error {
 		}
 
 		b.mu.Lock()
-		once.Do(func() { done.Done() })		
+		once.Do(func() { done.Done() })
 		b.mu.Unlock()
 	}()
 
@@ -131,7 +120,7 @@ func (b *Breaker) Do(f HandlerFunc, timeout time.Duration) error {
 
 	default:
 		ret = nil
-		
+
 	}
 
 	return ret
