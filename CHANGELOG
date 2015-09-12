@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.0 - September 12, 2015
+
+- Improves performance by introducing use of atomics in Trip and Reset
+- Changes NewBreaker to receive an uint64 instead of an int
+
 ## 0.0.1 - September 11, 2015
 
 - Fixes an issue where Do could never successfully exit.
