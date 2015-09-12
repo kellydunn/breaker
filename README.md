@@ -1,4 +1,6 @@
 # breaker
+[![documentation](https://godoc.org/github.com/kellydunn/breaker?status.png)](http://godoc.org/github.com/kellydunn/breaker)
+
 
 ![](https://img1.etsystatic.com/051/0/9689471/il_570xN.666236333_1w1d.jpg)
 
@@ -14,7 +16,7 @@ This implementation is relatively barebones; it's intended to be tripped and res
 
 ## example
 
-```golang
+```go
 package main
 
 import (

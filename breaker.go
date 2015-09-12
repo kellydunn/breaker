@@ -38,21 +38,21 @@ func NewBreaker(threshold uint64) *Breaker {
 // has a failure count above its failure threshold.
 // Returns false otherwise.
 func (b *Breaker) IsOpen() bool {
-	return b.Failures() >= b.Threshold()
+	return b.loadFailures() >= b.loadThreshold()
 }
 
 // IsClosed returns true if the current Breaker
 // has a failure count below its failure threshold.
 // Returns false otherwise.
 func (b *Breaker) IsClosed() bool {
-	return b.Failures() < b.Threshold()
+	return b.loadFailures() < b.loadThreshold()
 }
 
-func (b *Breaker) Failures() uint64 {
+func (b *Breaker) loadFailures() uint64 {
 	return atomic.LoadUint64(&b.failures)
 }
 
-func (b *Breaker) Threshold() uint64 {
+func (b *Breaker) loadThreshold() uint64 {
 	return atomic.LoadUint64(&b.threshold)
 }
 
@@ -83,24 +83,25 @@ func (b *Breaker) Do(f HandlerFunc, timeout time.Duration) error {
 	// ensure the function runs within a timeout
 	go func() {
 		time.Sleep(timeout)
-		timerChan <- true
 
-		b.mu.Lock()
-		once.Do(func() { done.Done() })
-		b.mu.Unlock()
+		once.Do(func() {
+			timerChan <- true
+			done.Done()
+		})
 	}()
 
 	// Setup a goroutine that runs the desired function
 	// and sends any error on the error channel
 	go func() {
 		err := f()
-		if err != nil {
-			errChan <- err
-		}
 
-		b.mu.Lock()
-		once.Do(func() { done.Done() })
-		b.mu.Unlock()
+		once.Do(func() {
+			if err != nil {
+				errChan <- err
+			}
+
+			done.Done()
+		})
 	}()
 
 	// Wait for either the timeout
@@ -120,7 +121,6 @@ func (b *Breaker) Do(f HandlerFunc, timeout time.Duration) error {
 
 	default:
 		ret = nil
-
 	}
 
 	return ret
