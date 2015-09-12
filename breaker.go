@@ -82,47 +82,45 @@ func (b *Breaker) Reset() {
 func (b *Breaker) Do(f HandlerFunc, timeout time.Duration) error {
 	timerChan := make(chan bool, 1)
 	errChan := make(chan error, 1)
-	successChan := make(chan bool, 1)
 
 	defer close(timerChan)
 	defer close(errChan)
-	defer close(successChan)
 
+	var once sync.Once
 	var done sync.WaitGroup
+	done.Add(1)
 
+	// Setup a timer goroutine to
+	// ensure the function runs within a timeout
 	go func() {
 		time.Sleep(timeout)
 		timerChan <- true
 
 		b.mu.Lock()
-		done.Add(1)
-		done.Done()
-		b.mu.Unlock()
+		once.Do(func() { done.Done() })
+		b.mu.Unlock()		
 	}()
 
+	// Setup a goroutine that runs the desired function
+	// and sends any error on the error channel
 	go func() {
 		err := f()
 		if err != nil {
 			errChan <- err
-		} else {
-			successChan <- true
 		}
 
 		b.mu.Lock()
-		done.Add(1)
-		done.Done()
+		once.Do(func() { done.Done() })		
 		b.mu.Unlock()
 	}()
 
+	// Wait for either the timeout
+	// or the function goroutine to complete
 	done.Wait()
 
 	var ret error
 
 	select {
-	case <-successChan:
-		b.Reset()
-		ret = nil
-
 	case <-timerChan:
 		b.Trip()
 		ret = ErrTimeout
@@ -130,6 +128,10 @@ func (b *Breaker) Do(f HandlerFunc, timeout time.Duration) error {
 	case e := <-errChan:
 		b.Trip()
 		ret = e
+
+	default:
+		ret = nil
+		
 	}
 
 	return ret
