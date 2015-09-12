@@ -1,0 +1,6 @@
+# Changelog
+
+## 0.0.1 - September 11, 2015
+
+- Fixes an issue where Do could never successfully exit.
+- Improves some race condition issues.
