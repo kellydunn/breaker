@@ -80,32 +80,57 @@ func (b *Breaker) Reset() {
 // Do calls the HandlerFunc associated with the current Breaker
 // with the passed in arguments. Returns
 func (b *Breaker) Do(f HandlerFunc, timeout time.Duration) error {
-	timer := make(chan int, 1)
-	errchan := make(chan error, 1)
+	timerChan := make(chan bool, 1)
+	errChan := make(chan error, 1)
+	successChan := make(chan bool, 1)
 
-	defer close(timer)
-	defer close(errchan)
+	defer close(timerChan)
+	defer close(errChan)
+	defer close(successChan)
+
+	var done sync.WaitGroup
 
 	go func() {
 		time.Sleep(timeout)
-		timer <- 1
+		timerChan <- true
+
+		b.mu.Lock()
+		done.Add(1)
+		done.Done()
+		b.mu.Unlock()
 	}()
 
 	go func() {
-		errchan <- f()
+		err := f()
+		if err != nil {
+			errChan <- err
+		} else {
+			successChan <- true
+		}
+
+		b.mu.Lock()
+		done.Add(1)
+		done.Done()
+		b.mu.Unlock()
 	}()
 
-	for {
-		select {
-		case <-timer:
-			b.Trip()
-			return ErrTimeout
-		case e := <-errchan:
-			b.Trip()
-			return e
-		}
+	done.Wait()
+
+	var ret error
+
+	select {
+	case <-successChan:
+		b.Reset()
+		ret = nil
+
+	case <-timerChan:
+		b.Trip()
+		ret = ErrTimeout
+
+	case e := <-errChan:
+		b.Trip()
+		ret = e
 	}
 
-	b.Reset()
-	return nil
+	return ret
 }
